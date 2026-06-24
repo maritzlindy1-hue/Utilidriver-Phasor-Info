@@ -18,6 +18,7 @@ from reportlab.lib.pagesizes import A4, landscape
 from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib.units import cm
 from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+from reportlab.graphics.shapes import Drawing, Line, Circle, String
 
 API_URL = os.getenv("UTILIDRIVER_API_URL", "http://197.189.218.35/utilidriver/api/orders/")
 REQUEST_TIMEOUT_SECONDS = int(os.getenv("REQUEST_TIMEOUT_SECONDS", "20"))
@@ -54,7 +55,7 @@ body{font-family:Arial,sans-serif;background:#f4f6f8;margin:0;padding:30px;color
 {% if result.meter_dec %}<p><b>Meter:</b> {{ result.meter_dec }} {% if result.meter_hex %} | <b>Hex:</b> {{ result.meter_hex }}{% endif %}</p>{% endif %}
 {% if result.order_url %}<div class="urls"><b>Order URL:</b> {{ result.order_url }}<br><b>Status URL:</b> {{ result.status_url }}<br><b>Completed URL:</b> {{ result.completed_url }}</div>{% endif %}
 {% if result.ct_ratio %}<p><b>CT Ratio:</b> {{ result.ct_ratio }} {% if result.ct_fraction %} | <b>Fraction:</b> {{ result.ct_fraction }}{% endif %}</p>{% endif %}
-{% if result.ok and result.result_id %}<p><a class="btn green" href="{{ url_for('show_phasor', result_id=result.result_id) }}">Draw Phasor Diagram</a><a class="btn blue" href="{{ url_for('download_excel', result_id=result.result_id) }}">Download Excel</a><a class="btn blue" href="{{ url_for('download_pdf', result_id=result.result_id) }}">Download PDF</a></p>{% endif %}
+{% if result.ok and result.result_id %}<p><a class="btn green" href="{{ url_for('show_phasor', result_id=result.result_id) }}">Draw Phasor Diagram</a><a class="btn blue" href="{{ url_for('download_excel', result_id=result.result_id) }}">Download Excel</a><a class="btn blue" href="{{ url_for('download_pdf', result_id=result.result_id) }}">Download PDF</a><a class="btn blue" href="{{ url_for('download_phasor_pdf', result_id=result.result_id) }}">Download Phasor PDF</a></p>{% endif %}
 {% if phasor_svg %}<div class="grid"><div><h3>Approximate Phasor Diagram</h3>{{ phasor_svg|safe }}<p class="small">Voltage angles are assumed at L1 0°, L2 -120°, L3 +120°. Current angle is estimated from PF using acos(PF). Reverse lag/lead sign later if the meter convention proves opposite.</p></div><div><h3>Phase Summary</h3><table><tr><th>Phase</th><th>Voltage</th><th>Current</th><th>PF</th><th>V Angle</th><th>I Angle</th></tr>{% for p in phase_summary %}<tr><td>{{p.phase}}</td><td>{{p.voltage}}</td><td>{{p.current}}</td><td>{{p.pf}}</td><td>{{p.v_angle}}</td><td>{{p.i_angle}}</td></tr>{% endfor %}</table></div></div>{% endif %}
 {% if result.rows %}<h3>Registers</h3><table><tr><th>Register</th><th>Description</th><th>Unit</th><th>Scale</th><th>Value</th></tr>{% for row in result.rows %}<tr><td>{{ row.id }}</td><td>{{ row.description }}</td><td>{{ row.unit }}</td><td>{{ row.scale }}</td><td>{{ row.value }}</td></tr>{% endfor %}</table>{% endif %}
 {% endif %}</div></body></html>
@@ -275,6 +276,57 @@ def download_excel(result_id: str):
     return send_file(buf, as_attachment=True, download_name=f"meter_results_{data.get('meter_dec')}.xlsx", mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
 
+
+def phasor_reportlab_drawing(rows: list[dict[str, str]], width: int = 360, height: int = 360) -> Drawing:
+    """Create a simple vector phasor drawing for the PDF report."""
+    summary = build_phase_summary(rows)
+    d = Drawing(width, height)
+    cx, cy, radius = width / 2, height / 2, min(width, height) * 0.36
+    d.add(Circle(cx, cy, radius, strokeColor=colors.lightgrey, fillColor=None))
+    d.add(Line(cx - radius - 20, cy, cx + radius + 20, cy, strokeColor=colors.lightgrey))
+    d.add(Line(cx, cy - radius - 20, cx, cy + radius + 20, strokeColor=colors.lightgrey))
+    d.add(String(cx, height - 18, "Approximate Phasor Diagram", textAnchor="middle", fontSize=12, fontName="Helvetica-Bold"))
+
+    phase_colours = {"L1": colors.red, "L2": colors.blue, "L3": colors.green}
+    for p in summary:
+        phase = p["phase"]
+        col = phase_colours.get(phase, colors.black)
+        for label, angle, length in [(f"{phase} V", p["v_angle_raw"], 1.0), (f"{phase} I", p["i_angle_raw"], 0.72)]:
+            rad = math.radians(angle)
+            x = cx + radius * length * math.cos(rad)
+            y = cy + radius * length * math.sin(rad)
+            d.add(Line(cx, cy, x, y, strokeColor=col, strokeWidth=2))
+            lx = cx + (radius * length + 18) * math.cos(rad)
+            ly = cy + (radius * length + 18) * math.sin(rad)
+            d.add(String(lx, ly, label, textAnchor="middle", fontSize=8, fillColor=col, fontName="Helvetica-Bold"))
+    return d
+
+
+def build_pdf_story(data: dict[str, Any], include_registers: bool = True, include_phasor: bool = True):
+    styles = getSampleStyleSheet()
+    story = [Paragraph("UtiliDriver Phasor / CT Info", styles["Title"]), Spacer(1, 0.2*cm)]
+    story.append(Paragraph(f"Meter: {data.get('meter_dec')} &nbsp;&nbsp; Hex: {data.get('meter_hex')} &nbsp;&nbsp; CT: {data.get('ct_fraction') or data.get('ct_ratio')}", styles["Normal"]))
+    story.append(Spacer(1, 0.25*cm))
+
+    if include_phasor:
+        story.append(phasor_reportlab_drawing(data.get("rows") or []))
+        story.append(Spacer(1, 0.25*cm))
+
+    phase_rows = [["Phase", "Voltage", "Current", "PF", "V Angle", "I Angle"]] + [[p["phase"], p["voltage"], p["current"], p["pf"], p["v_angle"], p["i_angle"]] for p in build_phase_summary(data.get("rows") or [])]
+    pt = Table(phase_rows)
+    pt.setStyle(TableStyle([("BACKGROUND", (0,0), (-1,0), colors.lightgrey), ("GRID", (0,0), (-1,-1), 0.25, colors.grey), ("FONTNAME", (0,0), (-1,0), "Helvetica-Bold")]))
+    story += [pt, Spacer(1, 0.3*cm)]
+
+    if include_registers:
+        rows = [["Register", "Description", "Unit", "Scale", "Value"]] + [[r["id"], r["description"], r["unit"], r["scale"], r["value"]] for r in data.get("rows") or []]
+        rt = Table(rows)
+        rt.setStyle(TableStyle([("BACKGROUND", (0,0), (-1,0), colors.lightgrey), ("GRID", (0,0), (-1,-1), 0.25, colors.grey), ("FONTNAME", (0,0), (-1,0), "Helvetica-Bold"), ("FONTSIZE", (0,0), (-1,-1), 8)]))
+        story.append(rt)
+
+    story.append(Spacer(1, 0.2*cm))
+    story.append(Paragraph("Note: Voltage angles are assumed at L1 0°, L2 -120°, L3 +120°. Current angle is estimated from PF using acos(PF).", styles["Normal"]))
+    return story
+
 @app.route("/download/pdf/<result_id>")
 def download_pdf(result_id: str):
     data = RESULT_CACHE.get(result_id)
@@ -282,22 +334,24 @@ def download_pdf(result_id: str):
         return redirect(url_for("index"))
     buf = io.BytesIO()
     doc = SimpleDocTemplate(buf, pagesize=landscape(A4), rightMargin=1*cm, leftMargin=1*cm, topMargin=1*cm, bottomMargin=1*cm)
-    styles = getSampleStyleSheet()
-    story = [Paragraph("UtiliDriver Phasor / CT Info", styles["Title"]), Spacer(1, 0.2*cm)]
-    story.append(Paragraph(f"Meter: {data.get('meter_dec')} &nbsp;&nbsp; Hex: {data.get('meter_hex')} &nbsp;&nbsp; CT: {data.get('ct_fraction') or data.get('ct_ratio')}", styles["Normal"]))
-    story.append(Spacer(1, 0.3*cm))
-    phase_rows = [["Phase", "Voltage", "Current", "PF", "V Angle", "I Angle"]] + [[p["phase"], p["voltage"], p["current"], p["pf"], p["v_angle"], p["i_angle"]] for p in build_phase_summary(data.get("rows") or [])]
-    pt = Table(phase_rows)
-    pt.setStyle(TableStyle([("BACKGROUND", (0,0), (-1,0), colors.lightgrey), ("GRID", (0,0), (-1,-1), 0.25, colors.grey), ("FONTNAME", (0,0), (-1,0), "Helvetica-Bold")]))
-    story += [pt, Spacer(1, 0.3*cm)]
-    rows = [["Register", "Description", "Unit", "Scale", "Value"]] + [[r["id"], r["description"], r["unit"], r["scale"], r["value"]] for r in data.get("rows") or []]
-    rt = Table(rows)
-    rt.setStyle(TableStyle([("BACKGROUND", (0,0), (-1,0), colors.lightgrey), ("GRID", (0,0), (-1,-1), 0.25, colors.grey), ("FONTNAME", (0,0), (-1,0), "Helvetica-Bold"), ("FONTSIZE", (0,0), (-1,-1), 8)]))
-    story.append(rt)
+    story = build_pdf_story(data, include_registers=True, include_phasor=True)
     doc.build(story)
     buf.seek(0)
     return send_file(buf, as_attachment=True, download_name=f"meter_results_{data.get('meter_dec')}.pdf", mimetype="application/pdf")
 
+
+
+@app.route("/download/phasor-pdf/<result_id>")
+def download_phasor_pdf(result_id: str):
+    data = RESULT_CACHE.get(result_id)
+    if not data:
+        return redirect(url_for("index"))
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=A4, rightMargin=1*cm, leftMargin=1*cm, topMargin=1*cm, bottomMargin=1*cm)
+    story = build_pdf_story(data, include_registers=False, include_phasor=True)
+    doc.build(story)
+    buf.seek(0)
+    return send_file(buf, as_attachment=True, download_name=f"phasor_diagram_{data.get('meter_dec')}.pdf", mimetype="application/pdf")
 
 @app.route("/health")
 def health() -> dict[str, str]:

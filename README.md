@@ -1,12 +1,14 @@
 # UtiliDriver Phasor / CT Info
 
-Render settings:
+Render start command:
 
-- Build Command: `pip install -r requirements.txt`
-- Start Command: `gunicorn --workers 1 --timeout 180 app:app`
-- Root Directory: leave blank
+```bash
+gunicorn --workers 1 --timeout 180 app:app
+```
 
 Flow:
-1. Enter meter serial and click **Get Readings Once**.
-2. The app sends only one POST order.
-3. Once readings show, use **Draw Phasor Diagram**, **Download Excel**, or **Download PDF**.
+1. Enter 8-digit meter serial.
+2. Click **Get Readings Once**. The app sends only one POST order.
+3. After readings load, use **Draw Phasor Diagram**, **Download Excel**, **Download PDF**, or **Download Phasor PDF**.
+
+The full PDF now includes the phasor diagram plus the phase summary and register readings. The separate phasor PDF includes the phasor diagram with the phase summary only.
