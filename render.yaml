@@ -1,16 +1,7 @@
 services:
   - type: web
-    name: phasor-ct-meter-read
+    name: utilidriver-phasor-info
     env: python
     plan: free
     buildCommand: pip install -r requirements.txt
     startCommand: gunicorn app:app
-    envVars:
-      - key: UTILIDRIVER_API_URL
-        value: http://197.189.218.35/utilidriver/api/orders/
-      - key: REQUEST_TIMEOUT_SECONDS
-        value: 20
-      - key: POLL_INTERVAL_SECONDS
-        value: 2
-      - key: POLL_TIMEOUT_SECONDS
-        value: 120
