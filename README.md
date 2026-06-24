@@ -2,10 +2,11 @@
 
 Render settings:
 
-- Root Directory: leave blank
 - Build Command: `pip install -r requirements.txt`
 - Start Command: `gunicorn --workers 1 --timeout 180 app:app`
+- Root Directory: leave blank
 
-Important: this app sends only one POST order per request. If the POST fails, it stops and does not post again.
-
-The longer Gunicorn timeout is required because the app waits for the UtiliDriver order to complete before showing the result.
+Flow:
+1. Enter meter serial and click **Get Readings Once**.
+2. The app sends only one POST order.
+3. Once readings show, use **Draw Phasor Diagram**, **Download Excel**, or **Download PDF**.
