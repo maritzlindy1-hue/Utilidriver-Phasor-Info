@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Phasor CT Meter Read</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <main class="container">
+    <section class="card">
+      <h1>Phasor CT Meter Read</h1>
+      <p class="muted">Enter the 8-digit meter serial number. The app will submit one order only. If the POST fails, it stops and does not submit again.</p>
+      <form method="post">
+        <label for="meter_number">Meter serial number</label>
+        <input id="meter_number" name="meter_number" type="text" inputmode="numeric" pattern="[0-9]{8}" maxlength="8" placeholder="Example: 12345678" required>
+        <button type="submit">Run meter read</button>
+      </form>
+    </section>
+
+    {% if result %}
+      <section class="card result {{ 'ok' if result.ok else 'error' }}">
+        <h2>{{ 'Success' if result.ok else 'Stopped' }}</h2>
+        <p>{{ result.message }}</p>
+
+        {% if result.meter_dec %}
+          <div class="grid">
+            <div><strong>Meter decimal</strong><span>{{ result.meter_dec }}</span></div>
+            {% if result.meter_hex %}<div><strong>Meter hex</strong><span>{{ result.meter_hex }}</span></div>{% endif %}
+            {% if result.ct_ratio %}<div><strong>CT ratio</strong><span>{{ result.ct_ratio }}</span></div>{% endif %}
+            {% if result.ct_fraction %}<div><strong>CT fraction</strong><span>{{ result.ct_fraction }}</span></div>{% endif %}
+          </div>
+        {% endif %}
+
+        {% if result.rows %}
+          <h3>Register values</h3>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Register ID</th>
+                  <th>Description</th>
+                  <th>Unit</th>
+                  <th>Scale</th>
+                  <th>Value</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for row in result.rows %}
+                  <tr>
+                    <td>{{ row.id }}</td>
+                    <td>{{ row.description }}</td>
+                    <td>{{ row.unit }}</td>
+                    <td>{{ row.scale }}</td>
+                    <td>{{ row.value }}</td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        {% endif %}
+      </section>
+    {% endif %}
+  </main>
+</body>
+</html>
